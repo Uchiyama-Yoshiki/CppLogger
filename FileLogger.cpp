@@ -1,54 +1,57 @@
-﻿#include "FileLogger.h"
+﻿/**
+ * @file FileLogger.cpp
+ * @author your name (you@domain.com)
+ * @brief  File Logger class implementation.
+ * @details This class is a class that outputs logs to a file.
+ * @version 0.1
+ * @date 2023-09-17
+ * 
+ * @copyright Copyright (c) 2023
+ * 
+ */
 
-// コンストラクタ
+#include "FileLogger.h"
+
 FileLogger::FileLogger()
     : m_FilePath(""),
       m_Stream()
 {
-    // 処理なし
+    // do nothing
 }
 
-/// @brief Constructor
-/// @param file_path 
 FileLogger::FileLogger(const std::string &file_path)
     : m_FilePath(file_path),
       m_Stream()
 {
-    /* ファイルオープン */
     this->Open(file_path);
 }
 
-// デストラクタ
 FileLogger::~FileLogger()
 {
-    /* ファイルクローズ */
     this->Close();
 }
-// ファイルオープン
+
 void FileLogger::Open(const std::string &file_path)
 {
     this->m_Stream.open(file_path, std::ios::app);
-    /* ファイルが開いていなかったら */
     if (this->IsOpened() == false)
     {
     }
 }
-// ファイルクローズ
+
 void FileLogger::Close()
 {
-    /* ファイルが開いていたら */
     if (this->IsOpened() == true)
     {
         this->m_Stream.close();
     }
 }
-// ファイルオープン確認
+
 bool FileLogger::IsOpened()
 {
     return this->m_Stream.is_open();
 }
 
-// ファイル書き込み
 void FileLogger::Write(const std::string &log)
 {
     /* ファイルが開いていたら */

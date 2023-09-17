@@ -1,17 +1,19 @@
 {
+    "version": "0.2.0",
     "configurations": [
         {
             "name": "C/C++: cl.exe アクティブ ファイルのビルドとデバッグ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${fileDirname}\\${fileBasenameNoExtension}.exe",
-            "args": ["1"],
+            "program": "${workspaceFolder}\\logger.exe",
+            // "program": "${fileDirname}\\${fileBasenameNoExtension}.exe",
+            "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            // "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "preLaunchTask": "C/C++: cl.exe アクティブなファイルのビルド"
+            "preLaunchTask": "debug build"
         }
     ],
-    "version": "2.0.0"
 }

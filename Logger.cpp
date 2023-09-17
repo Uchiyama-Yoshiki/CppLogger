@@ -1,90 +1,148 @@
-﻿#include "Logger.h"
-/// @brief シングルトンインスタンス取得
-/// @retval Logger&
+﻿/**
+ * @file Logger.cpp
+ * @author your name (you@domain.com)
+ * @brief  Logger class implementation.
+ * @version 0.1
+ * @date 2023-09-17
+ * 
+ * @copyright Copyright (c) 2023
+ * 
+ */
+#include "Logger.h"
+
 Logger &Logger::GetInstance()
 {
     static Logger Instance;
     return Instance;
 }
 
-/// @brief コンストラクタ
 Logger::Logger()
-    : hMutex(),
-      m_FileLogger()
+    : m_FileLogger(),
+      stopFlag(false)
 {
-    hMutex = CreateMutex(NULL, FALSE, NULL);
-    /* ログファイルオープン */
     this->m_FileLogger.Open("log.txt");
 }
-/// @brief デストラクタ
+
 Logger::~Logger()
 {
-
-    /* ログファイルクローズ */
     this->m_FileLogger.Close();
+    StopWriteWorker();
 }
-/// @brief Information
-/// @param message 出力文字列
+
+void Logger::WriteWorker()
+{
+    std::string log_message;
+
+    while (true)
+    {
+        if (this->PopMsgQueue(log_message))
+        {
+            this->m_FileLogger.Write(log_message);
+        }
+        else
+        {
+            break;
+        }
+    }
+}
+
+void Logger::StartWriteWorker()
+{
+    this->writeWorker = std::thread(&Logger::WriteWorker, this);
+}
+
+void Logger::StopWriteWorker()
+{
+    {
+        std::lock_guard<std::mutex> lock(stopMutex);
+        this->stopFlag.store(true);
+        this->signal.notify_one();
+    }
+
+    if (writeWorker.joinable())
+    {
+        writeWorker.join();
+    }
+}
+
+void Logger::Output(const std::string &message)
+{
+    if (this->writeWorker.joinable())
+    {
+        this->PushMsgQueue(message);
+    }
+    else
+    {
+        this->m_FileLogger.Write(message);
+    }
+}
+
 void Logger::LogInfo(const std::string &message)
 {
-
-    /* ミューテックスによる排他処理 */
-    WaitForSingleObject(this->hMutex, INFINITE);
-    /* Information**/
-    std::string messageInfo = ",[INFO]," + message;
-    std::string log_message = InsertTime(messageInfo);
-    /* Information ログを標準出力に出力(シアン) */
-    std::cout << log_message << std::endl;
-    /* Information ログをファイルに出力 */
-    this->m_FileLogger.Write(log_message);
-    ReleaseMutex(this->hMutex);
+    std::lock_guard<std::mutex> lock(this->outputMutex);
+    std::string log_message = this->GetNowTime() + ",INFO," + message;
+    this->Output(log_message);
 }
-///@brief  Warningログ出力
-///@param message 出力文字列
+
 void Logger::LogWarn(const std::string &message)
 {
-    /* ミューテックスによる排他処理 */
-    WaitForSingleObject(this->hMutex, INFINITE);
-
-    /* Warning */
-    std::string messageInfo = ",[WARN]," + message;
-    std::string log_message = InsertTime(messageInfo);
-    std::cerr << log_message << std::endl;
-    /*Warningログをファイルに出力 */
-    this->m_FileLogger.Write(log_message);
-    ReleaseMutex(this->hMutex);
+    std::lock_guard<std::mutex> lock(this->outputMutex);
+    std::string log_message = this->GetNowTime() + ",WARN," + message;
+    this->Output(log_message);
 }
 
-///@brief Errorログ出力
-///@param message 出力文字列
 void Logger::LogError(const std::string &message)
 {
-    /* ミューテックスによる排他処理 */
-    WaitForSingleObject(this->hMutex, INFINITE);
-    /* Errorログを生成 */
-    std::string messageInfo = ", [ERROR]," + message;
-    std::string log_message = InsertTime(messageInfo);
-    /* Errorログを標準出力に出力(赤色) */
-    std::cerr << log_message << std::endl;
-    /* Errorログをファイルに出力 */
-    this->m_FileLogger.Write(log_message);
-    ReleaseMutex(this->hMutex);
+    std::lock_guard<std::mutex> lock(this->outputMutex);
+    std::string log_message = this->GetNowTime() + ",ERROR," + message;
+    this->Output(log_message);
 }
-/// @brief 文字列の先頭に現在時刻を挿入
-/// @param message
-/// @retval std::string
-std::string Logger::InsertTime(std::string &message)
+
+std::string Logger::GetNowTime()
 {
-    time_t t = time(nullptr);
-    struct tm now;
-    std::string timeString;
-    localtime_s(&now, &t);
-    timeString =
-        std::to_string(now.tm_year + 1900) + "/" +
-        std::to_string(now.tm_mon) + "/" +
-        std::to_string(now.tm_mday) +" " +
-        std::to_string(now.tm_hour) + ":" +
-        std::to_string(now.tm_min) +":"+
-        std::to_string(now.tm_sec) +" ";
-        return timeString + message;
+    char time[32];
+    SYSTEMTIME stTime;
+
+    GetLocalTime(&stTime);
+
+    // Use "snprintf" with priority given to speed.
+    snprintf(time, sizeof(time), "%d/%02d/%02d %02d:%02d:%02d.%03d",
+             stTime.wYear, stTime.wMonth, stTime.wDay,
+             stTime.wHour, stTime.wMinute, stTime.wSecond, stTime.wMilliseconds);
+
+    std::string ret = time;
+
+    return ret;
+}
+
+void Logger::PushMsgQueue(const std::string &msg)
+{
+    {
+        std::lock_guard<std::mutex> lockQueue(this->queueMutex);
+        this->messageQue.push(msg);
+    }
+
+    this->signal.notify_one();
+}
+
+bool Logger::PopMsgQueue(std::string &msg)
+{
+    std::unique_lock<std::mutex> lock(this->queueMutex);
+
+    // wait実行 or notify_oneが実行されるまで待機
+    // 実行されたらラムダ式を評価する。
+    // true(キューが空　もしくは　停止要求があり)なら待機終了
+    // false(キューが空ではない　もしくは　停止要求が無し)なら待機継続
+    this->signal.wait(lock, [this]()
+    { return !this->messageQue.empty() || this->stopFlag.load(); });
+
+    if (this->messageQue.empty()) 
+    {
+        return false;
+    }
+
+    msg = this->messageQue.front();
+    this->messageQue.pop();
+    
+    return true;
 }
